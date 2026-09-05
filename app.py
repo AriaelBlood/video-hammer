@@ -9,6 +9,7 @@ from ffprobe_utils import probe
 from ui.toolbar_panel import ToolbarPanel
 from ui.file_list_panel import FileListPanel
 from ui.config_panel import ConfigPanel
+from ui.preview_panel import PreviewPanel
 from ui.progress_panel import ProgressPanel
 
 
@@ -34,9 +35,15 @@ class VideoCompressorApp:
         self.paned.pack(fill="both", expand=True, padx=8)
 
         self.file_list = FileListPanel(self.paned, on_select=self.on_file_selected)
-        self.config_panel = ConfigPanel(self.paned, on_change=self.on_settings_changed)
+
+        right = ttk.Frame(self.paned)
+        self.config_panel = ConfigPanel(right, on_change=self.on_settings_changed)
+        self.config_panel.pack(fill="both", expand=True)
+        self.preview_panel = PreviewPanel(right, on_generate=self.generate_previews)
+        self.preview_panel.pack(fill="x", pady=(8, 0))
+
         self.paned.add(self.file_list, weight=7)
-        self.paned.add(self.config_panel, weight=3)
+        self.paned.add(right, weight=3)
 
         self.progress = ProgressPanel(self.root, on_cancel=self.cancel)
         self.progress.pack(fill="x")
@@ -110,7 +117,44 @@ class VideoCompressorApp:
 
     # -- selection / config binding --------------------------------
     def on_file_selected(self, path):
-        self.config_panel.set_job(self.jobs.get(path) if path else None)
+        job = self.jobs.get(path) if path else None
+        self.config_panel.set_job(job)
+        self.preview_panel.set_job(job)
 
     def on_settings_changed(self, job):
         self.file_list.refresh_job(job)
+
+    # -- previews (M3) ---------------------------------------------
+    def generate_previews(self):
+        job = self.config_panel.job
+        if job is None:
+            return
+        if job.duration <= 0:
+            messagebox.showinfo("Previews", "Still probing this video — try again in a second.")
+            return
+        self.preview_panel.set_busy(True, "Generating preview clips…")
+        self.progress.set_busy(True)
+        self.progress.set_status(f"Generating previews for {job.filename}…")
+
+        def worker():
+            from ffmpeg_utils import make_previews
+            try:
+                paths = make_previews(job)
+                self.root.after(0, lambda: self._previews_done(job, paths))
+            except Exception as exc:
+                err = str(exc)
+                self.root.after(0, lambda: self._previews_failed(err))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _previews_done(self, job, paths):
+        job.preview_clips = paths
+        self.preview_panel.set_clips(paths)
+        self.preview_panel.set_busy(False)
+        self.progress.set_busy(False)
+        self.progress.set_status(f"Previews ready for {job.filename}.")
+
+    def _previews_failed(self, err):
+        self.preview_panel.set_busy(False)
+        self.preview_panel.show_error(err)
+        self.progress.set_busy(False)
+        self.progress.set_status("Preview generation failed.")
