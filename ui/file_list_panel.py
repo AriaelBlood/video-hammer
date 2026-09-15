@@ -6,15 +6,15 @@ from tkinter import ttk
 
 
 class FileListPanel(ttk.LabelFrame):
-    COLUMNS = ("file", "created", "info", "settings")
+    COLUMNS = ("status", "file", "created", "info", "settings")
 
     def __init__(self, master, on_select):
         super().__init__(master, text="Videos", padding=6)
         self.on_select = on_select
 
         self.tree = ttk.Treeview(self, columns=self.COLUMNS, show="headings", selectmode="extended")
-        headers = {"file": "File", "created": "Created", "info": "Info", "settings": "Settings"}
-        widths = {"file": 200, "created": 125, "info": 160, "settings": 220}
+        headers = {"status": "Status", "file": "File", "created": "Created", "info": "Info", "settings": "Settings"}
+        widths = {"status": 80, "file": 180, "created": 125, "info": 140, "settings": 210}
         for col in self.COLUMNS:
             self.tree.heading(col, text=headers[col])
             self.tree.column(col, width=widths[col], anchor="w")
@@ -40,7 +40,8 @@ class FileListPanel(ttk.LabelFrame):
                 info += f" · {job.src_width}×{job.src_height}"
         elif job.probe_failed:
             info = "⚠ probe failed"
-        return (job.filename, created, info, job.settings_summary())
+        status = getattr(job, "status", "Queued")
+        return (status, job.filename, created, info, job.settings_summary())
 
     def add_job(self, job):
         self.tree.insert("", "end", iid=job.path, values=self._row_values(job))

@@ -31,7 +31,7 @@ class PreviewPanel(ttk.LabelFrame):
         self.generate_btn.configure(state="normal" if job else "disabled")
         if job is None:
             self.status_var.set("No video selected.")
-            self._set_clips([])
+            self.set_clips([])
         elif not self.paths:
             self.status_var.set("Press Generate Previews to create 3 test clips.")
 

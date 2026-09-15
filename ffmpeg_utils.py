@@ -68,3 +68,114 @@ def stderr_progress(line: str):
         h, mn, s = m.groups()
         return int(h) * 3600 + int(mn) * 60 + float(s)
     return None
+
+
+def copy_file_timestamps(src_path: str, dst_path: str):
+    """Copy creation and modification timestamps from src to dst using PowerShell Get-Item."""
+    ps_exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), r"System32\WindowsPowerShell\v1.0\powershell.exe")
+    if not os.path.exists(ps_exe):
+        ps_exe = "powershell"
+
+    ps_cmd = (
+        f"$s = (Get-Item -LiteralPath '{src_path}'); "
+        f"$d = (Get-Item -LiteralPath '{dst_path}'); "
+        f"$d.CreationTime = $s.CreationTime; "
+        f"$d.LastWriteTime = $s.LastWriteTime"
+    )
+    res = subprocess.run(
+        [ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+        capture_output=True,
+        text=True,
+        creationflags=CREATE_NO_WINDOW
+    )
+    if res.returncode != 0:
+        raise RuntimeError(f"PowerShell timestamp copy failed: {res.stderr.strip()}")
+
+
+def get_unique_output_path(output_dir: str, original_filename: str) -> str:
+    """Generate a non-colliding output path like filename_compressed.mp4, or filename_compressed (1).mp4"""
+    base, _ = os.path.splitext(original_filename)
+    candidate = os.path.join(output_dir, f"{base}_compressed.mp4")
+    counter = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(output_dir, f"{base}_compressed ({counter}).mp4")
+        counter += 1
+    return candidate
+
+
+def encode_video(job, output_path: str, progress_callback=None, cancel_event=None):
+    """
+    Run full ffmpeg compression for a job.
+    - progress_callback(processed_seconds: float)
+    - cancel_event: threading.Event checked periodically
+    Returns output_path on success.
+    Raises RuntimeError on error or InterruptedError on cancellation.
+    """
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    cmd = [FFMPEG, "-y", "-i", job.path]
+    cmd += build_video_args(job)
+    cmd += [output_path]
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        bufsize=1,
+        creationflags=CREATE_NO_WINDOW
+    )
+
+    last_stderr_lines = []
+
+    try:
+        # ffmpeg writes progress info to stderr with \r or \n
+        while True:
+            if cancel_event and cancel_event.is_set():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                    except OSError:
+                        pass
+                raise InterruptedError("Encoding was cancelled by user.")
+
+            line = proc.stderr.readline()
+            if not line and proc.poll() is not None:
+                break
+            if line:
+                last_stderr_lines.append(line)
+                if len(last_stderr_lines) > 20:
+                    last_stderr_lines.pop(0)
+
+                secs = stderr_progress(line)
+                if secs is not None and progress_callback:
+                    progress_callback(secs)
+
+        retcode = proc.wait()
+        if retcode != 0:
+            err_msg = "".join(last_stderr_lines).strip()
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except OSError:
+                    pass
+            raise RuntimeError(f"FFmpeg exited with error code {retcode}:\n{err_msg[-600:]}")
+
+        # Post-encode: Copy timestamps using PowerShell Get-Item as required
+        copy_file_timestamps(job.path, output_path)
+
+        return output_path
+
+    except Exception:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        raise

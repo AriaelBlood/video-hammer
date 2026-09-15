@@ -49,6 +49,10 @@ class VideoJob:
     probe_failed: bool = False
     # preview clip paths (filled in M3)
     preview_clips: list = field(default_factory=list)
+    # encode tracking (M4)
+    status: str = "Ready"  # Ready, Encoding, Done, Failed, Cancelled
+    output_path: str = ""
+    error_message: str = ""
 
     @property
     def filename(self) -> str:

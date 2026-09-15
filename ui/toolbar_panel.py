@@ -16,7 +16,12 @@ class ToolbarPanel(ttk.LabelFrame):
         ttk.Button(self, text="Remove Selected", command=self.on_remove).pack(side="left", padx=(6, 0))
         ttk.Separator(self, orient="vertical").pack(side="left", fill="y", padx=10, pady=2)
         ttk.Button(self, text="Apply Settings to All", command=on_apply_all).pack(side="left")
-        ttk.Button(self, text="Compress (Final) ▶", command=on_compress).pack(side="right")
+        self.compress_btn = ttk.Button(self, text="Compress (Final) ▶", command=on_compress)
+        self.compress_btn.pack(side="right")
+
+    def set_busy(self, busy: bool):
+        state = "disabled" if busy else "normal"
+        self.compress_btn.configure(state=state)
 
     def _pick_files(self):
         paths = filedialog.askopenfilenames(title="Select video files", filetypes=VIDEO_EXTENSIONS)

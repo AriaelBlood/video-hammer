@@ -1,11 +1,12 @@
 """Main application window: wires the panels together."""
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import os
 import threading
 
 from video_job import VideoJob
 from ffprobe_utils import probe
+from ffmpeg_utils import encode_video, get_unique_output_path
 from ui.toolbar_panel import ToolbarPanel
 from ui.file_list_panel import FileListPanel
 from ui.config_panel import ConfigPanel
@@ -23,6 +24,9 @@ class VideoCompressorApp:
         self.root.minsize(880, 520)
 
         self.jobs = {}  # path -> VideoJob
+        self._encode_worker_thread = None
+        self._cancel_event = threading.Event()
+        self._is_encoding = False
 
         self.toolbar = ToolbarPanel(self.root, on_add=self.add_videos,
                                     on_remove=self.remove_selected,
@@ -50,7 +54,7 @@ class VideoCompressorApp:
 
         # graceful close (kills worker threads between awaits)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.version_label = tk.Label(text="V 0.0.1alph")
+        self.version_label = tk.Label(text="V 0.1.0 alph")
         self.auther_label = tk.Label(text="by AshnVeyl")
         self.version_label.pack(anchor='e',padx=20)
         self.auther_label.pack(anchor='e',padx=6)
@@ -60,6 +64,10 @@ class VideoCompressorApp:
         self.root.mainloop()
 
     def _on_close(self):
+        if self._is_encoding:
+            if not messagebox.askyesno("Exit", "Encoding is currently in progress. Cancel and exit?"):
+                return
+            self._cancel_event.set()
         self.root.destroy()
 
     # -- toolbar actions ------------------------------------------
@@ -108,12 +116,110 @@ class VideoCompressorApp:
         self.progress.set_status("Applied settings to all videos.")
 
     def start_compression(self):
-        # M4: final encoding — for now, placeholder
-        messagebox.showinfo("Compress", "Final encoding comes in milestone M4.\n"
-                                        "UI skeleton is working.")
+        if self._is_encoding:
+            return
+
+        if not self.jobs:
+            messagebox.showinfo("Compress", "Please add some videos first.")
+            return
+
+        # Let user choose output directory
+        first_video_dir = os.path.dirname(next(iter(self.jobs.values())).path)
+        out_dir = filedialog.askdirectory(
+            title="Select Output Folder for Compressed Videos",
+            initialdir=first_video_dir
+        )
+        if not out_dir:
+            return
+
+        self._is_encoding = True
+        self._cancel_event.clear()
+        self.toolbar.set_busy(True)
+        self.preview_panel.set_busy(True)
+        self.progress.set_busy(True)
+        self.progress.set_progress(0.0)
+
+        # Reset statuses for jobs to be encoded
+        for job in self.jobs.values():
+            job.status = "Queued"
+            job.error_message = ""
+            self.file_list.refresh_job(job)
+
+        jobs_list = list(self.jobs.values())
+
+        def runner():
+            succeeded = 0
+            failed = 0
+            cancelled = False
+
+            total_jobs = len(jobs_list)
+
+            for idx, job in enumerate(jobs_list):
+                if self._cancel_event.is_set():
+                    cancelled = True
+                    job.status = "Cancelled"
+                    self.root.after(0, lambda j=job: self.file_list.refresh_job(j))
+                    continue
+
+                job.status = "Encoding…"
+                self.root.after(0, lambda j=job: self.file_list.refresh_job(j))
+
+                output_path = get_unique_output_path(out_dir, job.filename)
+                job.output_path = output_path
+
+                def on_progress(secs, cur_idx=idx, j_duration=job.duration):
+                    if j_duration > 0:
+                        file_pct = min(1.0, secs / j_duration)
+                    else:
+                        file_pct = 0.5
+                    overall_pct = ((cur_idx + file_pct) / total_jobs) * 100.0
+                    mins, rem_s = divmod(int(secs), 60)
+                    msg = f"Encoding {cur_idx + 1}/{total_jobs}: {job.filename} [{mins}:{rem_s:02d}] ({overall_pct:.1f}%)"
+                    self.root.after(0, lambda: (self.progress.set_progress(overall_pct),
+                                                self.progress.set_status(msg)))
+
+                try:
+                    encode_video(job, output_path, progress_callback=on_progress, cancel_event=self._cancel_event)
+                    job.status = "Done ✔"
+                    succeeded += 1
+                except InterruptedError:
+                    cancelled = True
+                    job.status = "Cancelled"
+                except Exception as exc:
+                    job.status = "Failed ✖"
+                    job.error_message = str(exc)
+                    failed += 1
+
+                self.root.after(0, lambda j=job: self.file_list.refresh_job(j))
+
+            self.root.after(0, lambda: self._compression_finished(succeeded, failed, cancelled))
+
+        self._encode_worker_thread = threading.Thread(target=runner, daemon=True)
+        self._encode_worker_thread.start()
 
     def cancel(self):
-        pass  # M4
+        if self._is_encoding:
+            self._cancel_event.set()
+            self.progress.set_status("Cancelling current encoding job…")
+
+    def _compression_finished(self, succeeded, failed, cancelled):
+        self._is_encoding = False
+        self.toolbar.set_busy(False)
+        self.preview_panel.set_busy(False)
+        self.progress.set_busy(False)
+        self.progress.set_progress(100.0 if not cancelled and failed == 0 else self.progress.bar["value"])
+
+        if cancelled:
+            summary = f"Encoding cancelled.\nCompleted: {succeeded}\nFailed: {failed}"
+            self.progress.set_status("Encoding was cancelled.")
+            messagebox.showwarning("Cancelled", summary)
+        else:
+            summary = f"Encoding finished!\nSuccessfully encoded: {succeeded}\nFailed: {failed}"
+            self.progress.set_status(f"Finished: {succeeded} succeeded, {failed} failed.")
+            if failed > 0:
+                messagebox.showerror("Completed with Errors", summary)
+            else:
+                messagebox.showinfo("Completed", summary)
 
     # -- selection / config binding --------------------------------
     def on_file_selected(self, path):
