@@ -114,3 +114,11 @@ User provided a layout sketch:
 - Next: M3 — preview clips (3 clips at 10/40/70%, encoded with per-file settings, opened in default player).
 - M3 previews DONE (T3.1–T3.2 + manual Generate button per user request). New `ffmpeg_utils.py` (`build_video_args` shared with final encode, `make_previews` = 3 clips @10/40/70%, 4s, fast-seek; `stderr_progress` helper for M4). New `ui/preview_panel.py` — Generate Previews button (NOT automatic), 3 clip Open buttons → `os.startfile` default player. Clips stored in `previews/` (gitignored). Verified: clips probe back as valid 4s videos. Git: `master` branch, commits `0cc459d` (M1+M2), `2c902bc` (gitignore), `33d0843` (M3).
 - Next: M4 — final encoding with progress bar, cancel, background worker.
+- M4 encode & timestamp reattachment DONE (T4.1–T4.5).
+  - Background compression runner across all added videos with output folder picker.
+  - Per-video status column updated in real-time (`Queued`, `Encoding…`, `Done ✔`, `Failed ✖`, `Cancelled`).
+  - Overall progress bar and elapsed status text updated via stderr parsing.
+  - User cancellation support with graceful subprocess cleanup.
+  - PowerShell timestamp copy (`copy_file_timestamps`) using explicit path to `powershell.exe` to guarantee `CreationTime` and `LastWriteTime` match the source file perfectly. Verified with automated test: `MATCH SUCCESS!`.
+  - Git commit: `48d9fe7`.
+- Next: M6 — State tracking (`compress_state.json`) & corruption/unfinished detection on startup.

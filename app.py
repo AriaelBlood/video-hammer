@@ -7,6 +7,14 @@ import threading
 from video_job import VideoJob
 from ffprobe_utils import probe
 from ffmpeg_utils import encode_video, get_unique_output_path
+from state_manager import (
+    record_job_start,
+    record_job_finished,
+    record_job_failed,
+    record_job_cancelled,
+    check_unfinshed_or_corrupted_jobs,
+    resolve_corrupt_job
+)
 from ui.toolbar_panel import ToolbarPanel
 from ui.file_list_panel import FileListPanel
 from ui.config_panel import ConfigPanel
@@ -58,6 +66,36 @@ class VideoCompressorApp:
         self.auther_label = tk.Label(text="by AshnVeyl")
         self.version_label.pack(anchor='e',padx=20)
         self.auther_label.pack(anchor='e',padx=6)
+
+        # Check for interrupted / corrupt jobs from previous run
+        self.root.after(200, self._check_startup_corrupt_jobs)
+
+    def _check_startup_corrupt_jobs(self):
+        corrupt = check_unfinshed_or_corrupted_jobs()
+        if not corrupt:
+            return
+
+        count = len(corrupt)
+        names = "\n".join(f"• {os.path.basename(c.get('output_path', ''))} (Source: {os.path.basename(c.get('source_path', ''))})"
+                          for c in corrupt[:5])
+        if count > 5:
+            names += f"\n...and {count - 5} more."
+
+        msg = (
+            f"Detected {count} unfinished/interrupted compression job(s) from a previous session.\n\n"
+            f"The following partial file(s) exist on disk:\n{names}\n\n"
+            f"Would you like to DELETE the partial/corrupted output file(s) now?\n"
+            f"(Click 'Yes' to delete them, or 'No' to keep them as-is)"
+        )
+
+        should_delete = messagebox.askyesno("Unfinished / Corrupted Files Detected", msg)
+        for c in corrupt:
+            resolve_corrupt_job(c["id"], delete_file=should_delete)
+
+        if should_delete:
+            self.progress.set_status(f"Cleaned up {count} interrupted output file(s).")
+        else:
+            self.progress.set_status(f"Retained {count} interrupted output file(s).")
 
     # -- lifecycle ------------------------------------------------
     def run(self):
@@ -167,6 +205,9 @@ class VideoCompressorApp:
                 output_path = get_unique_output_path(out_dir, job.filename)
                 job.output_path = output_path
 
+                # Record start in compress_state.json
+                job_id = record_job_start(job.path, output_path, job.settings_summary())
+
                 def on_progress(secs, cur_idx=idx, j_duration=job.duration):
                     if j_duration > 0:
                         file_pct = min(1.0, secs / j_duration)
@@ -180,12 +221,16 @@ class VideoCompressorApp:
 
                 try:
                     encode_video(job, output_path, progress_callback=on_progress, cancel_event=self._cancel_event)
+                    # Succeeded: encode + PowerShell timestamp copy both finished
+                    record_job_finished(job_id)
                     job.status = "Done ✔"
                     succeeded += 1
                 except InterruptedError:
+                    record_job_cancelled(job_id)
                     cancelled = True
                     job.status = "Cancelled"
                 except Exception as exc:
+                    record_job_failed(job_id, str(exc))
                     job.status = "Failed ✖"
                     job.error_message = str(exc)
                     failed += 1
