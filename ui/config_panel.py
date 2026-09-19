@@ -119,6 +119,9 @@ class ConfigPanel(ttk.LabelFrame):
 
     # -- private -------------------------------------------------
     def _on_encoder_changed(self, _event=None):
+        if self._loading or self.job is None:
+            return
+        self.job.vencoder = self.enc_var.get()
         self._update_quality_fields_state()
         self._save()
 
@@ -126,7 +129,9 @@ class ConfigPanel(ttk.LabelFrame):
         """Enable or visually dim CRF vs HW quality based on selected encoder."""
         if not self.job:
             return
-        enc_name = self.job.encoder_name
+        enc_label = self.enc_var.get() or (self.job.vencoder if self.job else "")
+        from video_job import ENCODER_MAP
+        enc_name = ENCODER_MAP.get(enc_label, "libx264")
         is_software = enc_name in ("libx264", "libx265")
         try:
             self.crf_spin.configure(state="normal" if is_software else "disabled")
