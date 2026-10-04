@@ -28,6 +28,9 @@ def build_video_args(job):
         args += ["-cq", str(job.hw_quality)]
     else:  # qsv / amf
         args += ["-global_quality", str(job.hw_quality)]
+    # force a constant frame rate (fixes VFR screen-recordings that fail to compress)
+    if getattr(job, "change_framerate", False) and job.target_fps > 0:
+        args += ["-r", str(job.target_fps), "-vsync", "cfr"]
     if job.acodec.startswith("none"):
         args += ["-an"]
     elif job.acodec == "copy":

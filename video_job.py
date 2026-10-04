@@ -42,10 +42,14 @@ class VideoJob:
     custom_height: int = 720
     acodec: str = "aac"
     abitrate: str = "128k"
+    # framerate control (per-file)
+    change_framerate: bool = False   # when True, force -r target_fps
+    target_fps: float = 30.0
     # probe info (filled later, M2)
     duration: float = 0.0
     src_width: int = 0
     src_height: int = 0
+    src_fps: float = 0.0
     probe_failed: bool = False
     # preview clip paths (filled in M3)
     preview_clips: list = field(default_factory=list)
@@ -77,7 +81,8 @@ class VideoJob:
     def settings_summary(self) -> str:
         enc = self.encoder_name
         res = self.resolution if self.resolution != "custom" else f"{self.custom_width}x{self.custom_height}"
-        return f"{enc} Q{self.quality_value}, {res}, {self.acodec} {self.abitrate}"
+        fps_part = f" @ {self.target_fps:g}fps" if self.change_framerate else ""
+        return f"{enc} Q{self.quality_value}, {res}{fps_part}, {self.acodec} {self.abitrate}"
 
     def to_dict(self) -> dict:
         return asdict(self)

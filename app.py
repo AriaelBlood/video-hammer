@@ -129,6 +129,10 @@ class VideoCompressorApp:
                 job.duration = info["duration"]
                 job.src_width = info["width"]
                 job.src_height = info["height"]
+                job.src_fps = info["fps"]
+                # Prefill target fps with the source's own fps (nice quality-of-life)
+                if job.src_fps > 0 and job.target_fps <= 0:
+                    job.target_fps = job.src_fps
             except Exception:
                 job.probe_failed = True
             self.root.after(0, lambda: self.file_list.refresh_job(job))

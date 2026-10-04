@@ -122,3 +122,10 @@ User provided a layout sketch:
   - PowerShell timestamp copy (`copy_file_timestamps`) using explicit path to `powershell.exe` to guarantee `CreationTime` and `LastWriteTime` match the source file perfectly. Verified with automated test: `MATCH SUCCESS!`.
   - Git commit: `48d9fe7`.
 - Next: M6 — State tracking (`compress_state.json`) & corruption/unfinished detection on startup.
+- M6 state tracking DONE (T6.1–T6.4).
+  - Created `state_manager.py` with atomic write support to `compress_state.json`.
+  - State lifecycle tracking: `running` at start, updated to `finished` only when both FFmpeg encoding and PowerShell timestamp copying succeed, or `failed` / `cancelled`.
+  - Startup recovery check: Automatically checks `compress_state.json` on app load; if any job is left as `running` and its output file exists, prompts the user to either clean up / delete corrupted partial files or keep them.
+  - Verified logic with standalone test suite.
+  - Git commit: `c809316`.
+- Remaining: M5 — Polish & user testing.

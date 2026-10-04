@@ -68,6 +68,20 @@ class ConfigPanel(ttk.LabelFrame):
         size_frame.grid(row=row, column=1, sticky="w", pady=3)
 
         row += 1
+        # Framerate control: toggle + target fps (fixes VFR screen recordings)
+        self.fps_enabled_var = tk.BooleanVar(value=False)
+        self.fps_check = ttk.Checkbutton(self, text="Force framerate (fix VFR screen recordings):",
+                                         variable=self.fps_enabled_var, command=self._on_fps_toggled)
+        self.fps_check.grid(row=row, column=0, sticky="w", pady=3)
+        self.fps_var = tk.StringVar(value="30")
+        self.fps_spin = ttk.Spinbox(self, from_=1, to=240, textvariable=self.fps_var, width=6,
+                                    command=self._save)
+        self.fps_spin.grid(row=row, column=1, sticky="w", pady=3)
+        self.fps_spin.bind("<KeyRelease>", self._save)
+        self.fps_spin.bind("<FocusOut>", self._save)
+        self.fps_spin.configure(state="disabled")
+
+        row += 1
         ttk.Label(self, text="Audio codec:").grid(row=row, column=0, sticky="w", pady=3)
         self.ac_var = tk.StringVar()
         self.ac_box = ttk.Combobox(self, textvariable=self.ac_var, values=AUDIO_CODECS,
@@ -88,6 +102,7 @@ class ConfigPanel(ttk.LabelFrame):
         self.hw_var.trace_add("write", lambda *args: self._save())
         self.w_var.trace_add("write", lambda *args: self._save())
         self.h_var.trace_add("write", lambda *args: self._save())
+        self.fps_var.trace_add("write", lambda *args: self._save())
 
         self.columnconfigure(1, weight=1)
         self.set_job(None)
@@ -111,6 +126,10 @@ class ConfigPanel(ttk.LabelFrame):
                 self.res_var.set(job.resolution)
                 self.w_var.set(str(job.custom_width))
                 self.h_var.set(str(job.custom_height))
+                self.fps_enabled_var.set(bool(job.change_framerate))
+                src_fps_txt = f"{job.src_fps:g}" if job.src_fps > 0 else "30"
+                self.fps_var.set(f"{job.target_fps:g}" if job.change_framerate else src_fps_txt)
+                self.fps_spin.configure(state="normal" if job.change_framerate else "disabled")
                 self.ac_var.set(job.acodec)
                 self.ab_var.set(job.abitrate)
                 self._update_quality_fields_state()
@@ -123,6 +142,18 @@ class ConfigPanel(ttk.LabelFrame):
             return
         self.job.vencoder = self.enc_var.get()
         self._update_quality_fields_state()
+        self._save()
+
+    def _on_fps_toggled(self):
+        """Enable fps spinbox and prefill from source video's detected fps."""
+        if self._loading or self.job is None:
+            return
+        if self.fps_enabled_var.get():
+            src = self.job.src_fps if self.job.src_fps > 0 else 30.0
+            self.fps_var.set(f"{src:g}")
+            self.fps_spin.configure(state="normal")
+        else:
+            self.fps_spin.configure(state="disabled")
         self._save()
 
     def _update_quality_fields_state(self):
@@ -158,5 +189,12 @@ class ConfigPanel(ttk.LabelFrame):
         self.job.custom_height = parse_int(self.h_var.get(), self.job.custom_height)
         self.job.acodec = self.ac_var.get()
         self.job.abitrate = self.ab_var.get()
+        self.job.change_framerate = bool(self.fps_enabled_var.get())
+        try:
+            fps_val = float(self.fps_var.get())
+            if fps_val > 0:
+                self.job.target_fps = fps_val
+        except ValueError:
+            pass
 
         self.on_change(self.job)  # app refreshes the list row immediately

@@ -10,8 +10,22 @@ FFMPEG = os.path.join(BIN_DIR, "ffmpeg.exe")
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
+def _parse_fps(stream: dict) -> float:
+    """Best-effort average fps from a video stream dict (e.g. '30/1' -> 30.0)."""
+    for key in ("avg_frame_rate", "r_frame_rate"):
+        raw = stream.get(key) or ""
+        try:
+            num, den = raw.split("/")
+            num, den = float(num), float(den)
+            if den > 0 and num > 0:
+                return round(num / den, 3)
+        except (ValueError, ZeroDivisionError):
+            continue
+    return 0.0
+
+
 def probe(path: str) -> dict:
-    """Return {duration, width, height} for a video file. Raises RuntimeError on failure."""
+    """Return {duration, width, height, fps} for a video file. Raises RuntimeError on failure."""
     cmd = [FFPROBE, "-v", "error", "-print_format", "json",
            "-show_entries", "format=duration",
            "-show_streams", path]
@@ -22,9 +36,11 @@ def probe(path: str) -> dict:
     data = json.loads(result.stdout)
     duration = float(data.get("format", {}).get("duration", 0) or 0)
     width = height = 0
+    fps = 0.0
     for stream in data.get("streams", []):
         if stream.get("codec_type") == "video":
             width = int(stream.get("width") or 0)
             height = int(stream.get("height") or 0)
+            fps = _parse_fps(stream)
             break
-    return {"duration": duration, "width": width, "height": height}
+    return {"duration": duration, "width": width, "height": height, "fps": fps}
