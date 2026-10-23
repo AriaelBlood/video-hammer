@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 previews/
 compress_state.json
+plan.md
+bin/
+*.exe

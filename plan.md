@@ -129,3 +129,14 @@ User provided a layout sketch:
   - Verified logic with standalone test suite.
   - Git commit: `c809316`.
 - Remaining: M5 — Polish & user testing.
+- VFR fix (user-reported real-world bug): phone screen recordings use variable frame rate and failed to compress (reported "Failed ✖"). Added per-file "Force framerate" checkbox + fps spinbox in config panel.
+  - ffprobe now extracts `avg_frame_rate` → `VideoJob.src_fps` (new field).
+  - QoL: when toggled on, the fps spinbox prefills automatically with the source video's detected fps.
+  - `build_video_args` emits `-r <fps> -vsync cfr` when enabled, converting VFR → CFR so encoding succeeds.
+  - Verified with a synthetic VFR test clip (detected avg fps 5.263): encoded successfully both with and without the toggle; with the toggle the output is true CFR.
+  - Git commit: `7b65828`.
+- Public repository preparation:
+  - Switched FFmpeg/FFprobe detection from local `bin/` to system PATH (`shutil.which`), with fallback to local `bin/` if present.
+  - Added startup PATH verification dialog alerting users if `ffmpeg` or `ffprobe` are not found on the machine.
+  - Untracked `bin/` from Git repository and added `bin/` and `*.exe` to `.gitignore` to comply with FFmpeg binary distribution licenses.
+  - Authored clean, comprehensive `README.md` containing the project name (**Video Hammer**), AI-assistance note, feature list, requirements, Windows usage guide, known issues, and MIT license reference.

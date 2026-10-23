@@ -5,7 +5,7 @@ import os
 import threading
 
 from video_job import VideoJob
-from ffprobe_utils import probe
+from ffprobe_utils import probe, get_ffmpeg_status
 from ffmpeg_utils import encode_video, get_unique_output_path
 from state_manager import (
     record_job_start,
@@ -23,8 +23,6 @@ from ui.progress_panel import ProgressPanel
 
 
 class VideoCompressorApp:
-    BIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
-
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Video Compressor")
@@ -69,6 +67,25 @@ class VideoCompressorApp:
 
         # Check for interrupted / corrupt jobs from previous run
         self.root.after(200, self._check_startup_corrupt_jobs)
+        # Check that ffmpeg / ffprobe are found in PATH
+        self.root.after(300, self._check_ffmpeg_installed)
+
+    def _check_ffmpeg_installed(self):
+        status = get_ffmpeg_status()
+        if not status["ready"]:
+            missing = []
+            if not status["ffmpeg"]:
+                missing.append("ffmpeg")
+            if not status["ffprobe"]:
+                missing.append("ffprobe")
+            msg = (
+                f"Missing required tool(s): {', '.join(missing)}\n\n"
+                "Please install FFmpeg and make sure both 'ffmpeg' and 'ffprobe' "
+                "are added to your system PATH environment variable.\n\n"
+                "Download FFmpeg from: https://ffmpeg.org/download.html"
+            )
+            messagebox.showwarning("FFmpeg Not Found", msg)
+            self.progress.set_status("⚠ FFmpeg/FFprobe not found in PATH! Please install them.")
 
     def _check_startup_corrupt_jobs(self):
         corrupt = check_unfinshed_or_corrupted_jobs()

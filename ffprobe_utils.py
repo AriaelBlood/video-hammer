@@ -1,13 +1,27 @@
-"""ffprobe wrapper: extract media info from video files using bin/ffprobe.exe."""
+"""ffprobe wrapper: extract media info from video files using system PATH or local bin/."""
 import json
 import os
+import shutil
 import subprocess
 
-BIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
-FFPROBE = os.path.join(BIN_DIR, "ffprobe.exe")
-FFMPEG = os.path.join(BIN_DIR, "ffmpeg.exe")
+# Look up in system PATH first; fallback to local bin/ if present
+_LOCAL_BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+FFPROBE = shutil.which("ffprobe") or os.path.join(_LOCAL_BIN, "ffprobe.exe")
+FFMPEG = shutil.which("ffmpeg") or os.path.join(_LOCAL_BIN, "ffmpeg.exe")
+
 # no console window pops up on Windows
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+
+def get_ffmpeg_status() -> dict:
+    """Check whether ffmpeg and ffprobe are accessible on the system."""
+    ffmpeg_ok = bool(shutil.which("ffmpeg") or os.path.exists(FFMPEG))
+    ffprobe_ok = bool(shutil.which("ffprobe") or os.path.exists(FFPROBE))
+    return {
+        "ffmpeg": FFMPEG if ffmpeg_ok else None,
+        "ffprobe": FFPROBE if ffprobe_ok else None,
+        "ready": ffmpeg_ok and ffprobe_ok
+    }
 
 
 def _parse_fps(stream: dict) -> float:
